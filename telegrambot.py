@@ -140,7 +140,7 @@ async def quote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ----------- Main ----------
 async def main():
-    token = os.environ.get("BOT_TOKEN")
+    token = os.environ.get("8089546800:AAF4lNnboVR5T2sRipRL3tz3J7tuy3tyDok")
     if not token:
         raise RuntimeError("BOT_TOKEN environment variable not set")
 
@@ -157,3 +157,4 @@ async def main():
 if __name__ == "__main__":
     # Render runs on Linux; no Windows event loop policy needed
     asyncio.run(main())
+
