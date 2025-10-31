@@ -1,5 +1,7 @@
+import os
 import random
 import requests
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -73,19 +75,18 @@ categories = {
 
 # ----------- Helper Functions -----------
 def get_api_quote():
-    """Fetch a quote from ZenQuotes API"""
+    """Fetch a quote from ZenQuotes API with local fallback."""
     try:
-        response = requests.get("https://zenquotes.io/api/random", timeout=5)
+        response = requests.get("https://zenquotes.io/api/random", timeout=6)
         data = response.json()
         return f"{data[0]['q']} — {data[0]['a']}"
     except Exception:
         return random.choice(local_quotes)
 
-# ----------- Command Handlers -----------
+# ----------- Handlers -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Welcome to the Motivational Bot!\n\n"
-        "Type /category to choose your motivation type or get started!"
+        "👋 Welcome to the Motivational Bot!\n\nUse /category to choose your motivation type."
     )
 
 async def category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,37 +98,37 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🔥 Confidence", callback_data="confidence")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "Click a button to get your motivational quote:",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Choose a category:", reply_markup=reply_markup)
 
-# ----------- Inline Button Handler -----------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
-    if data in ["random", "study", "success", "gym", "confidence"]:
-        # Pick a quote
-        if data == "random":
-            quote = get_api_quote()
-        else:
-            quote = random.choice(categories.get(data, local_quotes))
-
-        # After quote, ask for next action
-        keyboard = [
-            [InlineKeyboardButton("✨ Another Quote", callback_data=data)],
-            [InlineKeyboardButton("❌ Exit", callback_data="exit")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(text=f"{quote}\n\nWould you like another one?", reply_markup=reply_markup)
-
+    # choose quote
+    if data == "random":
+        quote = get_api_quote()
+    elif data in categories:
+        quote = random.choice(categories[data])
     elif data == "exit":
-        await query.edit_message_text("Thanks for using the Motivational Bot! 🌟 Type /category anytime to get more quotes!")
+        await query.edit_message_text("Thanks for using the bot! 🌟")
+        return
+    else:
+        # Another quote request uses same callback data (category)
+        if data in categories:
+            quote = random.choice(categories[data])
+        else:
+            quote = get_api_quote()
 
-# ----------- Message Handler -----------
+    # after sending quote ask for next action (same category preserved in callback)
+    keyboard = [
+        [InlineKeyboardButton("✨ Another Quote", callback_data=data if data in categories or data == "random" else "random")],
+        [InlineKeyboardButton("❌ Exit", callback_data="exit")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    # edit message if this came from a button, else send new
+    await query.edit_message_text(text=f"{quote}\n\nWould you like another one?", reply_markup=reply_markup)
+
 async def quote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quote = get_api_quote()
     keyboard = [
@@ -137,11 +138,13 @@ async def quote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"{quote}\n\nWould you like another one?", reply_markup=reply_markup)
 
-# ----------- Main Function -----------
-def main():
-    TOKEN = "8089546800:AAF4lNnboVR5T2sRipRL3tz3J7tuy3tyDok"
+# ----------- Main ----------
+async def main():
+    token = os.environ.get("BOT_TOKEN")
+    if not token:
+        raise RuntimeError("BOT_TOKEN environment variable not set")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("category", category))
@@ -149,7 +152,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     print("🤖 Bot is running...")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    # Render runs on Linux; no Windows event loop policy needed
+    asyncio.run(main())
